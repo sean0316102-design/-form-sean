@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>拼單字對打 PvP｜武裝強化版</title>
+  <style>
+    :root{
+      /* 鮮明配色：深紫背景 + 霓虹光 */
+      --bg: #030014;
+      --panel: rgba(20, 20, 40, 0.7);
+      --line: #423b6e;
+      --txt: #ffffff;
+      --muted: #a3a3d1;
+      
+      --p-turn: #00f2ff; /* 當前回合：青色 */
+      --p-good: #00ff9d; /* 答對/加分：螢光綠 */
+      --p-bad: #ff0055;  /* 攻擊/扣血：螢光紅 */
+      --p-warn: #ffcc00; /* 警告 */
+    }
+
+    *{box-sizing:border-box}
+    
+    body{
+      margin:0; min-height:100vh; color:var(--txt);
+      font-family: "Segoe UI", "Roboto", system-ui, sans-serif;
+      background-color: var(--bg);
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(circle at 50% 0%, #2a1b5e 0%, transparent 60%),
+        radial-gradient(circle at 80% 80%, #1a0b2e 0%, transparent 50%);
+    }
+
+    /* === 背景動態網格 (Cyber Grid) === */
+    .cyber-grid {
+      position: fixed; inset: 0; pointer-events: none; z-index: -1;
+      background-image: 
+        linear-gradient(rgba(88, 66, 255, 0.2) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(88, 66, 255, 0.2) 1px, transparent 1px);
+      background-size: 50px 50px;
+      transform: perspective(500px) rotateX(60deg) translateY(-100px) scale(2);
+      animation: gridMove 20s linear infinite;
+      opacity: 0.4;
+      mask-image: linear-gradient(to bottom, transparent 5%, black 40%, black 80%, transparent 100%);
+    }
+    @keyframes gridMove { 0%{background-position:0 0} 100%{background-position:0 50px} }
+
+    .wrap{max-width:1000px;margin:0 auto;padding:20px 16px}
+
+    /* === 頂部列 === */
+    .top{
+      display:flex; justify-content:space-between; align-items:center; gap:10px;
+      background: var(--panel); border: 1px solid rgba(255,255,255,0.1);
+      border-radius:16px; padding:12px 16px;
+      backdrop-filter: blur(20px);
+      box-shadow: 0 4px 30px rgba(0,0,0,0.5);
+    }
+    .badge{
+      width:42px;height:42px;border-radius:12px;
+      background: linear-gradient(135deg, #4b2688, #221246);
+      border:1px solid #7d46e3; 
+      display:grid; place-items:center; font-size:22px;
+      box-shadow: 0 0 15px rgba(125, 70, 227, 0.4);
+    }
+    
+    /* === 按鈕樣式 === */
+    .btn{
+      border:none; background: #2b2b48; color:#fff;
+      padding:10px 18px; border-radius:8px; cursor:pointer; font-weight:700;
+      transition: .2s; position: relative; overflow: hidden;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 4px 0 rgba(0,0,0,0.3);
+    }
+    .btn:active{transform:translateY(2px); box-shadow:none}
+    .btn:hover{background:#3d3d61}
+    .btn.good{ background: linear-gradient(180deg, #00b871, #008a55); text-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+    .btn.good:hover{filter:brightness(1.1); box-shadow: 0 0 15px rgba(0, 255, 157, 0.4);}
+    .btn.warn{background: #b83b3b;}
+
+    /* === 主要卡片 === */
+    .card{
+      margin-top:20px;
+      border:1px solid rgba(255,255,255,0.15);
+      background: rgba(15, 15, 35, 0.6);
+      border-radius: 24px; padding: 24px;
+      backdrop-filter: blur(15px);
+      box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+      position: relative;
+    }
+
+    /* HUD 數據條 */
+    .hud{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center; margin-bottom:20px}
+    .pill{
+      background: rgba(0,0,0,0.4); border:1px solid var(--line);
+      border-radius:99px; padding:6px 16px; font-size:14px; color:var(--muted);
+      display:flex; gap:8px; align-items:center;
+    }
+    .pill b{color:#fff; font-family: monospace; font-size:16px}
+
+    /* === 玩家列表 === */
+    .playersGrid{
+      display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:16px;
+      margin-top: 10px;
+    }
+    @media(max-width:800px){.playersGrid{grid-template-columns: repeat(2, 1fr);}}
+    @media(max-width:500px){.playersGrid{grid-template-columns: 1fr;}}
+
+    .pCard{
+      position: relative;
+      background: linear-gradient(160deg, #1e1e30, #0a0a14);
+      border: 2px solid transparent;
+      border-radius: 16px; padding: 14px;
+      transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+      cursor: pointer;
+      box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+    }
+    .pCard:hover{ transform: translateY(-4px); box-shadow: 0 15px 30px rgba(0,0,0,0.5); border-color: rgba(255,255,255,0.2); }
+    .pCard:active{ transform: scale(0.96); }
+    .pCard.turnCard{ border-color: var(--p-turn); box-shadow: 0 0 25px rgba(0, 242, 255, 0.15), inset 0 0 15px rgba(0, 242, 255, 0.05); z-index: 2; }
+    .pCard.target{ border-color: var(--p-bad); animation: targetPulse 2s infinite; }
+    .pCard.target::before{ content:"🎯 LOCK"; position:absolute; top:-10px; right:10px; background:var(--p-bad); color:#fff; font-size:10px; font-weight:900; padding:2px 6px; border-radius:4px; box-shadow: 0 0 10px var(--p-bad); }
+    @keyframes targetPulse { 0%,100%{box-shadow:0 0 0 var(--p-bad)} 50%{box-shadow:0 0 15px var(--p-bad)} }
+    .pCard.dead{ filter: grayscale(1) brightness(0.4); opacity: 0.6; cursor: not-allowed; border: 1px dashed #555; }
+
+    .pHead{display:flex;justify-content:space-between;align-items:center; margin-bottom:8px}
+    .pName{font-weight:800; font-size:15px; color:#fff; display:flex; align-items:center; gap:8px}
+    .pAvatar{font-size:18px;}
+
+    /* 血條特效 */
+    .hpTrack{background: #000; height:8px; border-radius:4px; overflow:hidden; position:relative}
+    .hpFill{ height:100%; width:100%; background: linear-gradient(90deg, #00ff88, #00ccff); box-shadow: 0 0 10px rgba(0, 255, 136, 0.5); transition: width 0.4s ease-out; }
+    .hpFill.low{background: linear-gradient(90deg, #ffcc00, #ff5c00); box-shadow:none}
+    .hpFill.crit{background: linear-gradient(90deg, #ff0055, #ff0000); box-shadow:0 0 10px #ff0000}
+
+    /* === 輸入區 === */
+    .prompt{ margin-top:20px; background: rgba(0,0,0,0.3); border-radius:16px; padding:20px; border: 1px dashed rgba(255,255,255,0.1); }
+    .letters{display:flex; flex-wrap:wrap; gap:8px; margin: 12px 0; min-height:44px}
+    .chip{ background: linear-gradient(180deg, #3d3d5c, #26263d); border-top: 1px solid #5d5d80; border-bottom: 2px solid #1a1a2e; border-radius:8px; padding:10px 14px; font-weight:bold; font-size:18px; box-shadow: 0 4px 8px rgba(0,0,0,0.3); animation: popUp 0.3s backwards; }
+    @keyframes popUp{from{transform:scale(0);opacity:0} to{transform:scale(1)}}
+    .inputRow{display:flex; gap:12px; position:relative}
+    input{ flex:1; background: #0a0a14; border: 2px solid var(--line); color: #fff; font-size: 20px; padding: 14px 18px; border-radius: 12px; outline: none; letter-spacing: 1px; font-family: monospace; transition: .3s; }
+    input:focus{ border-color: var(--p-turn); box-shadow: 0 0 20px rgba(0, 242, 255, 0.1); }
+    #btnGo{ min-width: 100px; font-size:18px; letter-spacing: 1px; background: linear-gradient(90deg, #ff0055, #ff2a75); border:none; box-shadow: 0 0 15px rgba(255, 0, 85, 0.4); }
+    #btnGo:hover{ transform: scale(1.05); }
+    .log{margin-top:12px; min-height:24px; font-size:15px; text-shadow:0 1px 2px #000}
+    .ok{color:var(--p-good); font-weight:bold}
+    .no{color:var(--p-bad); font-weight:bold}
+
+    /* === 🚀 動畫特效層 (原有) === */
+    .projectile { position: fixed; pointer-events: none; z-index: 9999; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 0 10px #fff, 0 0 20px var(--p-turn), 0 0 40px var(--p-turn); animation: spin 0.5s linear infinite; }
+    .projectile.fire { box-shadow: 0 0 10px #ffcc00, 0 0 20px #ff5500; background: #ffcc00; }
+    .particle { position: fixed; pointer-events: none; z-index: 9999; width: 6px; height: 6px; border-radius: 50%; background: var(--p-bad); animation: explode 0.6s ease-out forwards; }
+    @keyframes explode { 0% { transform: translate(0,0) scale(1); opacity:1; } 100% { transform: translate(var(--tx), var(--ty)) scale(0); opacity:0; } }
+    .dmg-float { position: absolute; pointer-events: none; z-index: 100; color: #fff; font-weight: 900; font-size: 28px; text-shadow: 0 0 5px var(--p-bad), 0 0 10px var(--p-bad); animation: floatUp 0.8s ease-out forwards; }
+    @keyframes floatUp { 0%{opacity:1;transform:translateY(0) scale(0.5)} 50%{transform:translateY(-30px) scale(1.5)} 100%{opacity:0;transform:translateY(-60px) scale(1)} }
+    .shake { animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both; }
+    @keyframes shake { 10%, 90% { transform: translate3d(-2px, 0, 0); } 20%, 80% { transform: translate3d(4px, 0, 0); } 30%, 50%, 70% { transform: translate3d(-6px, 0, 0); } 40%, 60% { transform: translate3d(6px, 0, 0); } }
+
+    /* === ⚔️ 全新：戰鬥過場動畫層 (Attack Scene Overlay) === */
+    .attack-scene {
+        position: fixed; inset: 0; z-index: 20000;
+        background: rgba(3, 0, 20, 0.9); backdrop-filter: blur(10px);
+        display: none; place-items: center;
+        border-top: 5px solid var(--p-turn); border-bottom: 5px solid var(--p-bad);
+    }
+    .attack-scene.show { display: grid; }
+
+    .scene-content {
+        display: flex; align-items: center; justify-content: space-between;
+        width: 100%; max-width: 800px; padding: 20px;
+        position: relative;
+    }
+    .combatant { text-align: center; position: relative; z-index: 2; }
+    .combatant.attacker .c-avatar { color: var(--p-turn); text-shadow: 0 0 30px var(--p-turn); animation: pulseTurn 1s infinite alternate; }
+    .combatant.target .c-avatar { color: var(--p-bad); text-shadow: 0 0 30px var(--p-bad); }
+    .combatant.target.hit-shake { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
+    @keyframes pulseTurn { from{filter:brightness(1)} to{filter:brightness(1.5)} }
+
+    .c-avatar { font-size: 100px; margin-bottom: 10px; transition: transform 0.3s; }
+    .c-name { font-size: 24px; font-weight: 900; color: #fff; letter-spacing: 2px; }
+
+    /* 武器揮舞區 */
+    .weapon-stage {
+        position: absolute; left: 50%; top: 50%;
+        transform: translate(-50%, -50%);
+        width: 60%; height: 200px;
+        pointer-events: none; z-index: 3;
+        overflow: visible;
+    }
+    .scene-weapon {
+        font-size: 120px; position: absolute;
+        left: 10%; top: 20%;
+        opacity: 0; filter: drop-shadow(0 0 20px var(--p-turn));
+        transform-origin: center bottom;
+    }
+    /* 武器攻擊動畫關鍵影格 */
+    .scene-weapon.animate { animation: weaponStrike 0.9s ease-in-out forwards; }
+    @keyframes weaponStrike {
+        0% { opacity: 0; transform: translateX(0) rotate(-45deg) scale(0.8); }
+        20% { opacity: 1; transform: translateX(20px) rotate(-20deg) scale(1); }
+        60% { opacity: 1; transform: translateX(250px) rotate(45deg) scale(1.2); } /* 揮砍到目標 */
+        80% { opacity: 1; transform: translateX(350px) rotate(90deg) scale(1); }
+        100% { opacity: 0; transform: translateX(400px) rotate(120deg) scale(0.5); }
+    }
+
+    /* === Overlays (設定/題庫) === */
+    .overlay{position:fixed; inset:0; display:none; place-items:center; background:rgba(0,0,0,0.8); backdrop-filter:blur(5px); z-index:100; opacity:0; transition:opacity .3s}
+    .overlay.show{display:grid; opacity:1}
+    .panel-box{width:90%; max-width:600px; background:#1a1a2e; border:1px solid var(--line); border-radius:16px; padding:24px; box-shadow:0 20px 60px rgba(0,0,0,0.8); transform:scale(0.9); transition:.3s}
+    .overlay.show .panel-box{transform:scale(1)}
+    textarea{width:100%; min-height:150px; background:#0d0d1a; border:1px solid #333; color:#eee; padding:10px; border-radius:8px; font-family:monospace}
+
+  </style>
+</head>
+<body>
+  <div class="cyber-grid"></div>
+
+  <div class="wrap">
+    <div class="top">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div class="badge">⚔️</div>
+        <div>
+          <b style="font-size:18px; letter-spacing:1px">WORD BATTLE</b>
+          <span style="font-size:12px; color:var(--muted); display:block">PvP 武裝強化版</span>
+        </div>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn" id="btnSetup">⚙️ 設定</button>
+        <button class="btn" id="btnBank">📚 題庫</button>
+        <button class="btn warn" id="btnRestart">🔄</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="hud">
+        <span class="pill">🔥 回合：<b id="turnText" style="color:var(--p-turn)">P1</b></span>
+        <span class="pill">🎯 目標：<b id="targetText" style="color:var(--p-bad)">—</b></span>
+        <span class="pill">⭐ <b id="totalScore">0</b></span>
+        <span class="pill">⚡ 連擊 <b id="streak">0</b></span>
+        <span class="pill">📖 <b id="progress">0/0</b></span>
+      </div>
+
+      <div class="playersGrid" id="playersGrid"></div>
+
+      <div class="prompt">
+        <div style="display:flex; justify-content:space-between; color:var(--muted); font-size:13px">
+          <span>題目提示</span>
+          <span id="hintLabel" style="color:var(--p-turn)">你的回合</span>
+        </div>
+        <div id="hint" style="font-size:20px; font-weight:bold; margin-top:4px; text-shadow:0 0 10px rgba(255,255,255,0.3)"></div>
+        
+        <div class="letters" id="letters"></div>
+
+        <div class="inputRow">
+          <input id="ans" placeholder="輸入單字攻擊..." autocomplete="off" autocapitalize="none" spellcheck="false" />
+          <button id="btnGo" class="btn">🚀 發射</button>
+        </div>
+        <div class="log" id="log"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="attack-scene" id="attackScene">
+      <div class="scene-content">
+          <div class="combatant attacker">
+              <div class="c-avatar" id="attSceneAvatar">🤖</div>
+              <div class="c-name" id="attSceneName">P1</div>
+          </div>
+          <div class="weapon-stage">
+              <div class="scene-weapon" id="sceneWeapon">⚔️</div>
+          </div>
+          <div class="combatant target" id="targetSceneEl">
+              <div class="c-avatar" id="tarSceneAvatar">👽</div>
+              <div class="c-name" id="tarSceneName">P2</div>
+          </div>
+      </div>
+  </div>
+
+  <div class="overlay" id="setupOverlay">
+    <div class="panel-box">
+      <h2 style="margin-top:0">🎮 戰鬥設定</h2>
+      <p style="color:var(--muted)">選擇參賽人數</p>
+      <div style="display:flex; gap:10px; margin-bottom:20px" id="segPlayers"></div>
+      <div style="text-align:right">
+        <button class="btn good" id="btnStart" style="width:100%">開始對戰</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="bankOverlay">
+    <div class="panel-box">
+      <h2 style="margin-top:0">📚 自訂題庫</h2>
+      <p style="font-size:12px; color:var(--muted)">格式: word, hint</p>
+      <textarea id="bank"></textarea>
+      <div style="display:flex; justify-content:space-between; margin-top:10px; align-items:center">
+        <input type="file" id="file" style="width:150px; font-size:12px; border:none; background:transparent; padding:0" />
+        <div style="display:flex; gap:10px">
+          <button class="btn" id="btnDefault">預設</button>
+          <button class="btn good" id="btnApply">套用</button>
+          <button class="btn" id="btnCloseBank">關閉</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const $ = (s)=>document.querySelector(s);
+  const $$ = (s)=>document.querySelectorAll(s);
+  const onlyWord = (s)=> (s||"").trim().toLowerCase().replace(/[^a-z]/g,"");
+  const shuffle = (arr)=>{ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; } return arr; };
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+  const DEFAULT = `dragon, 噴火的巨獸\ngalaxy, 銀河系\nthunder, 打雷\nphoenix, 不死鳥\ncrypto, 加密貨幣\nmatrix, 矩陣/母體\nwarrior, 戰士\ncastle, 城堡\nvictory, 勝利\nattack, 攻擊\nshield, 盾牌\nenergy, 能量`;
+  
+  // === 角色與武器池 ===
+  const AVATARS = ['🤖', '👽', '👾', '🥷', '🦸‍♂️', '🧙‍♂️', '🧛', '🧟'];
+  const WEAPONS = ['⚔️', '🔫', '🪄', '🏹', '🪓', '🔨', '🪃', '🗡️'];
+
+  // --- STATE ---
+  const config = { players: 2 };
+  const state = {
+    bank: [], order: [], idx: 0, current: null,
+    ps: [], // {hp, hpMax, score, alive, avatar, weapon} <-- 新增 avatar, weapon
+    turn: 0, target: 1, 
+    totalScore: 0, streak: 0, gameOver: false,
+    isAnimating: false
+  };
+
+  // --- UI REFS ---
+  const el = {
+    grid: $("#playersGrid"),
+    ans: $("#ans"), hint: $("#hint"), letters: $("#letters"), log: $("#log"),
+    turnT: $("#turnText"), targT: $("#targetText"), scoreT: $("#totalScore"), strkT: $("#streak"), progT: $("#progress"), hintL: $("#hintLabel"),
+    setupOv: $("#setupOverlay"), bankOv: $("#bankOverlay"), bankTx: $("#bank"),
+    // 新增過場 Ref
+    sceneOv: $("#attackScene"),
+    attAv: $("#attSceneAvatar"), attNm: $("#attSceneName"),
+    tarAv: $("#tarSceneAvatar"), tarNm: $("#tarSceneName"),
+    sceneWp: $("#sceneWeapon"), tarSceneEl: $("#targetSceneEl")
+  };
+
+  // --- FX ENGINE (特效引擎) ---
+  
+  // ⚔️ 全新：播放戰鬥過場動畫
+  async function playAttackScene(attIdx, tarIdx) {
+    const attacker = state.ps[attIdx];
+    const target = state.ps[tarIdx];
+
+    // 1. 設定過場內容
+    el.attAv.textContent = attacker.avatar;
+    el.attNm.textContent = `P${attIdx+1}`;
+    el.tarAv.textContent = target.avatar;
+    el.tarNm.textContent = `P${tarIdx+1}`;
+    el.sceneWp.textContent = attacker.weapon;
+
+    // 2. 顯示過場層
+    el.sceneOv.classList.add("show");
+    
+    // 3. 開始武器動畫
+    el.sceneWp.classList.add("animate");
+
+    // 4. 在動畫中段 (約 500ms) 讓目標晃動，模擬擊中感
+    await wait(500);
+    el.tarSceneEl.classList.add("hit-shake");
+
+    // 5. 等待動畫結束
+    await wait(500);
+
+    // 6. 清理並隱藏
+    el.sceneOv.classList.remove("show");
+    el.sceneWp.classList.remove("animate");
+    el.tarSceneEl.classList.remove("hit-shake");
+    // 短暫暫停讓視覺轉換更順暢
+    await wait(200);
+  }
+
+
+  // (原有) 產生飛行物動畫
+  async function spawnProjectile(fromIdx, toIdx, isHit) {
+    const cards = $$(".pCard");
+    const startEl = cards[fromIdx]; const endEl = cards[toIdx];
+    if(!startEl || !endEl) return;
+    const r1 = startEl.getBoundingClientRect(); const r2 = endEl.getBoundingClientRect();
+    const p = document.createElement("div");
+    p.className = isHit ? "projectile" : "projectile fire";
+    document.body.appendChild(p);
+    const startX = r1.left + r1.width/2 - 10; const startY = r1.top + r1.height/2 - 10;
+    const endX = r2.left + r2.width/2 - 10; const endY = r2.top + r2.height/2 - 10;
+    p.style.transform = `translate(${startX}px, ${startY}px)`;
+    void p.offsetWidth;
+    p.style.transition = "transform 0.4s cubic-bezier(0.25, 1, 0.5, 1)";
+    p.style.transform = `translate(${endX}px, ${endY}px)`;
+    await wait(400); p.remove();
+  }
+
+  // (原有) 爆炸與浮動文字
+  function spawnExplosion(targetIdx, color) {
+    const card = $$(".pCard")[targetIdx]; if(!card) return;
+    const rect = card.getBoundingClientRect();
+    const cx = rect.left + rect.width/2; const cy = rect.top + rect.height/2;
+    for(let i=0; i<12; i++) {
+      const part = document.createElement("div"); part.className = "particle";
+      part.style.backgroundColor = color; part.style.left = cx + "px"; part.style.top = cy + "px";
+      const angle = Math.random() * Math.PI * 2; const dist = 30 + Math.random() * 50;
+      part.style.setProperty("--tx", Math.cos(angle)*dist+"px"); part.style.setProperty("--ty", Math.sin(angle)*dist+"px");
+      document.body.appendChild(part); setTimeout(()=>part.remove(), 600);
+    }
+  }
+  function showDmg(idx, val, isCrit=false) {
+    const card = $$(".pCard")[idx]; if(!card) return;
+    const d = document.createElement("div"); d.className = "dmg-float";
+    d.textContent = "-" + val; d.style.color = isCrit ? "#ff0000" : "#ffcc00";
+    if(isCrit) d.style.fontSize = "36px";
+    card.appendChild(d); d.style.left = "50%"; d.style.top = "20%"; d.style.marginLeft = "-20px";
+    setTimeout(()=>d.remove(), 800);
+  }
+  function shakeCard(idx) { const c = $$(".pCard")[idx]; if(c) { c.classList.remove("shake"); void c.offsetWidth; c.classList.add("shake"); } }
+
+  // --- GAME LOGIC ---
+
+  function renderPlayers() {
+    el.grid.innerHTML = "";
+    ensureValidTarget();
+
+    state.ps.forEach((p, i) => {
+      const isTurn = (i === state.turn);
+      const isTarget = (i === state.target);
+      const hpPct = Math.max(0, p.hp / p.hpMax * 100);
+
+      const div = document.createElement("div");
+      div.className = `pCard ${!p.alive?"dead":""} ${isTurn?"turnCard":""} ${isTarget&&p.alive?"target":""}`;
+      
+      let hpColor = "hpFill";
+      if(hpPct < 40) hpColor += " low"; if(hpPct < 20) hpColor += " crit";
+
+      div.innerHTML = `
+        <div class="pHead">
+          <div class="pName">
+            <span class="pAvatar">${p.avatar}</span> P${i+1}
+          </div>
+          ${!p.alive ? '<span style="color:gray;font-size:12px">☠️</span>' : ''}
+        </div>
+        <div style="font-size:12px; color:#aaa; display:flex; justify-content:space-between; margin-bottom:4px">
+          <span>HP</span> <span>${p.hp}</span>
+        </div>
+        <div class="hpTrack"><div class="${hpColor}" style="width:${hpPct}%"></div></div>
+        <div style="margin-top:8px; font-size:13px; display:flex; justify-content:space-between; align-items:center">
+          <span style="font-size:16px" title="武器">${p.weapon}</span>
+          <div><span style="color:#666">PTS</span> <b style="color:#fff">${p.score}</b></div>
+        </div>
+      `;
+
+      div.onclick = () => {
+        if(state.gameOver || !p.alive || i===state.turn || state.isAnimating) return;
+        state.target = i; renderPlayers(); updateHUD();
+      };
+      el.grid.appendChild(div);
+    });
+  }
+
+  function updateHUD() {
+    el.turnT.textContent = `P${state.turn+1}`;
+    el.targT.textContent = state.target===state.turn ? "—" : `P${state.target+1}`;
+    el.scoreT.textContent = state.totalScore;
+    el.strkT.textContent = state.streak;
+    el.progT.textContent = `${state.idx}/${state.order.length}`;
+    el.hintL.textContent = `P${state.turn+1} 的回合`;
+  }
+
+  function nextQ() {
+    if(!state.order.length) return;
+    if(state.idx >= state.order.length) {
+      state.order = shuffle([...state.order]);
+      state.idx = 0;
+      el.log.innerHTML += `<br><span class="ok">📚 題庫重洗!</span>`;
+    }
+    state.current = state.bank[state.order[state.idx]];
+    state.idx++;
+    const ch = state.current.word.split(""); shuffle(ch);
+    el.letters.innerHTML = "";
+    ch.forEach((c,i) => {
+      const s = document.createElement("span"); s.className="chip"; s.textContent = c.toUpperCase();
+      s.style.animationDelay = (i*0.05)+"s"; el.letters.appendChild(s);
+    });
+    el.hint.textContent = state.current.hint;
+    el.ans.value = ""; el.ans.focus();
+    updateHUD(); renderPlayers();
+  }
+
+  function ensureValidTarget() {
+    if(state.target === state.turn || !state.ps[state.target]?.alive) {
+      for(let k=1; k<state.ps.length; k++) {
+        const idx = (state.turn + k) % state.ps.length;
+        if(state.ps[idx].alive && idx !== state.turn) { state.target = idx; return; }
+      }
+      state.target = state.turn;
+    }
+  }
+
+  async function performAttack() {
+    if(state.gameOver || state.isAnimating) return;
+    const input = onlyWord(el.ans.value);
+    if(!input) { el.ans.focus(); return; }
+
+    state.isAnimating = true; el.ans.disabled = true;
+    ensureValidTarget();
+    const att = state.turn; const tar = state.target;
+    
+    if(input === state.current.word) {
+      // === 正確：發動攻擊 ===
+      state.streak++;
+      const dmg = 20 + Math.min(30, state.streak * 5);
+
+      // ⚔️ 1. 播放全新的戰鬥過場動畫 ⚔️
+      await playAttackScene(att, tar);
+      
+      // 2. 回到主介面，播放原本的飛行與爆炸特效
+      await spawnProjectile(att, tar, true);
+      spawnExplosion(tar, "#00f2ff"); shakeCard(tar); showDmg(tar, dmg, state.streak>2);
+
+      // 3. 計算數據
+      state.ps[tar].hp = Math.max(0, state.ps[tar].hp - dmg);
+      state.ps[att].score += dmg; state.totalScore += dmg;
+      
+      if(state.ps[tar].hp <= 0) {
+        state.ps[tar].alive = false;
+        el.log.innerHTML = `<span class="ok">擊殺！</span> P${att+1} 淘汰了 P${tar+1}`;
+      } else {
+        el.log.innerHTML = `<span class="ok">命中！</span> 造成 ${dmg} 傷害`;
+      }
+    } else {
+      // === 錯誤：膛炸自傷 ===
+      state.streak = 0; const dmg = 15;
+      // 自傷不播放過場，直接播放原有的自爆特效
+      await spawnProjectile(att, att, false);
+      spawnExplosion(att, "#ffcc00"); shakeCard(att); showDmg(att, dmg);
+      state.ps[att].hp = Math.max(0, state.ps[att].hp - dmg);
+      if(state.ps[att].hp <= 0) {
+        state.ps[att].alive = false;
+        el.log.innerHTML = `<span class="no">自爆！</span> P${att+1} 淘汰`;
+      } else {
+        el.log.innerHTML = `<span class="no">失誤！</span> 答案是 ${state.current.word}`;
+      }
+    }
+
+    // Check Win & Next Turn
+    const alive = state.ps.map((p,i)=>({p,i})).filter(x=>x.p.alive);
+    if(alive.length <= 1) {
+      state.gameOver = true; renderPlayers();
+      el.log.innerHTML = `<br><b style="color:#fff;font-size:20px">🏆 遊戲結束！P${alive[0]?.i+1||'?'} 獲勝</b>`;
+      state.isAnimating = false; el.ans.disabled = false; return;
+    }
+    let next = att; do { next = (next+1)%state.ps.length; } while(!state.ps[next].alive);
+    state.turn = next;
+    state.isAnimating = false; el.ans.disabled = false; nextQ();
+  }
+
+  function resetGame() {
+    // 初始化玩家時隨機分配頭像與武器
+    state.ps = Array.from({length: config.players}, (_, i)=>({
+        hp:100, hpMax:100, score:0, alive:true,
+        avatar: AVATARS[i % AVATARS.length],
+        weapon: WEAPONS[Math.floor(Math.random() * WEAPONS.length)]
+    }));
+    state.turn = 0; state.target = 1; state.streak = 0; state.totalScore = 0;
+    state.gameOver = false; state.isAnimating = false;
+    state.order = shuffle(state.bank.map((_,i)=>i)); state.idx = 0;
+    renderPlayers(); nextQ();
+    el.log.innerHTML = "🏁 戰鬥開始！";
+  }
+
+  // --- INIT & EVENTS ---
+  $("#btnGo").onclick = performAttack; el.ans.onkeydown = (e) => { if(e.key==="Enter") performAttack(); };
+  const updateSeg = () => { $("#segPlayers").innerHTML = ""; [2,3,4,5,6].forEach(n => { const b = document.createElement("button"); b.className = `btn ${config.players===n?"good":""}`; b.textContent = n+"人"; b.onclick = () => { config.players = n; updateSeg(); }; $("#segPlayers").appendChild(b); }); }; updateSeg();
+  $("#btnSetup").onclick = () => el.setupOv.classList.add("show"); $("#btnStart").onclick = () => { el.setupOv.classList.remove("show"); resetGame(); };
+  $("#btnBank").onclick = () => el.bankOv.classList.add("show"); $("#btnCloseBank").onclick = () => el.bankOv.classList.remove("show");
+  $("#btnDefault").onclick = () => el.bankTx.value = DEFAULT;
+  $("#btnApply").onclick = () => { const lines = el.bankTx.value.split("\n").filter(x=>x.trim()); const items = []; lines.forEach(l => { const [w, h] = l.split(/,|，/); if(w && w.trim()) items.push({word:onlyWord(w), hint:(h||"").trim()}); }); if(items.length) { state.bank = items; el.bankOv.classList.remove("show"); resetGame(); } };
+  $("#btnRestart").onclick = resetGame;
+  $("#file").onchange = (e) => { const f = e.target.files[0]; if(f) f.text().then(t => el.bankTx.value = t); };
+  el.bankTx.value = DEFAULT; $("#btnApply").click(); $("#btnSetup").click();
+
+})();
+</script>
+</body>
+</html>S
